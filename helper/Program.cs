@@ -20,6 +20,9 @@ internal static class Program
     {
         Console.OutputEncoding = Encoding.UTF8;
 
+        // 前回 helper が外部 kill 等で SystemAsterisk 復元できずに終わっていたら拾う
+        SystemSoundSilencer.RestoreLeftovers();
+
         try
         {
             var parsed = ParseArgs(args);
@@ -58,6 +61,8 @@ internal static class Program
 
     private static int HandleSave(ParsedArgs args)
     {
+        // 音声保存完了 MessageBox の "ぽこーん" (Windows 情報音) を save 中だけ抑止
+        using var silencer = new SystemSoundSilencer();
         using var driver = Voiceroid2Driver.AttachAndWaitReady();
         driver.SaveAudio(args.RequireText(), args.Speaker, args.RequireOut());
         return 0;
