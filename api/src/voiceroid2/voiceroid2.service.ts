@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import * as os from 'os';
@@ -15,15 +16,18 @@ interface VoiceTuning {
 
 export interface SynthesizeOptions extends VoiceTuning {
   text: string;
-  speaker?: string;
+  voice_db?: string;
+  voice_name?: string;
 }
 
 export interface TalkOptions extends VoiceTuning {
   text: string;
-  speaker?: string;
+  voice_db?: string;
+  voice_name?: string;
 }
 
-// VOICEROID2 のマスター効果は前回値が残るため、未指定時も明示的に 1.0 を送って初期化する
+// VOICEROID2 のマスター効果は前回値が残るため、未指定時も明示的に 1.0 を送って初期化する。
+// helper の DLL 直叩きでも同じ理由 (Initialize → LoadVoice 後に GUI の前回値が初期パラメータに入る)。
 const TUNING_DEFAULT = 1.0;
 
 function buildTuningArgs(options: VoiceTuning): string[] {
@@ -42,11 +46,38 @@ function buildTuningArgs(options: VoiceTuning): string[] {
 @Injectable()
 export class Voiceroid2Service {
   private readonly logger = new Logger(Voiceroid2Service.name);
-  // VOICEROID2 は単一インスタンス。リクエストは直列化する。
+  // helper.exe (DLL 直叩き) を spawn ごとに DLL を初期化する。同じプロセス内では
+  // aitalked.dll は 1 つしか初期化できないので、複数呼び出しは直列化する。
+  // CLAUDE.md の同時実行制約は据え置き。
   private queue: Promise<void> = Promise.resolve();
   private pendingCount = 0;
 
-  constructor(private readonly cli: Voiceroid2Cli) {}
+  private readonly installDir: string;
+  private readonly authCode: string;
+  private readonly defaultVoiceDb: string | undefined;
+  private readonly defaultVoiceName: string | undefined;
+
+  constructor(
+    private readonly cli: Voiceroid2Cli,
+    configService: ConfigService,
+  ) {
+    this.installDir = configService.get<string>(
+      'VOICEROID2_INSTALL_DIR',
+      'C:\\Program Files (x86)\\AHS\\VOICEROID2',
+    );
+    this.authCode = configService.get<string>('VOICEROID2_AUTH_CODE', '');
+    this.defaultVoiceDb = configService.get<string>(
+      'VOICEROID2_DEFAULT_VOICE_DB',
+    );
+    this.defaultVoiceName = configService.get<string>(
+      'VOICEROID2_DEFAULT_VOICE_NAME',
+    );
+    if (!this.authCode) {
+      this.logger.warn(
+        'VOICEROID2_AUTH_CODE が設定されていません。helper の --get-key で取得して .env に設定してください。',
+      );
+    }
+  }
 
   getStatus(): WorkerStatus {
     return {
@@ -55,12 +86,33 @@ export class Voiceroid2Service {
     };
   }
 
-  async listSpeakers(): Promise<string[]> {
-    const { stdout, stderr } = await this.cli.exec(['--list-speakers']);
+  async listVoiceDbs(): Promise<string[]> {
+    // DLL 初期化不要なので queue 外で即時実行。
+    const { stdout, stderr } = await this.cli.exec([
+      '--list-voice-dbs',
+      '--install-dir',
+      this.installDir,
+    ]);
     if (stderr) {
       this.logger.warn(`helper stderr: ${stderr}`);
     }
     return parseLines(stdout);
+  }
+
+  async listSpeakers(voice_db: string): Promise<string[]> {
+    // DLL を初期化するので queue を経由させる。
+    return this.enqueue(async () => {
+      const { stdout, stderr } = await this.cli.exec([
+        '--list-speakers',
+        ...this.commonInitArgs(),
+        '--voice-db',
+        voice_db,
+      ]);
+      if (stderr) {
+        this.logger.warn(`helper stderr: ${stderr}`);
+      }
+      return parseLines(stdout);
+    });
   }
 
   async talk(options: TalkOptions): Promise<void> {
@@ -83,13 +135,16 @@ export class Voiceroid2Service {
   }
 
   private async doTalk(options: TalkOptions): Promise<void> {
-    const args = ['--talk', '--text', options.text];
-    if (options.speaker) {
-      args.push('--speaker', options.speaker);
-    }
-    args.push(...buildTuningArgs(options));
+    const args = [
+      '--talk',
+      '--text',
+      options.text,
+      ...this.commonInitArgs(),
+      ...this.voiceArgs(options),
+      ...buildTuningArgs(options),
+    ];
     this.logger.log(
-      `talk: ${options.speaker ?? '(default)'} "${options.text}"`,
+      `talk: ${options.voice_db ?? this.defaultVoiceDb ?? '(no voice_db)'}/${options.voice_name ?? this.defaultVoiceName ?? '(first speaker)'} "${options.text}"`,
     );
     await this.execAndLogStderr(args);
   }
@@ -98,19 +153,47 @@ export class Voiceroid2Service {
     const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'voiceroid2-'));
     const outFile = path.join(tmpDir, 'out.wav');
     try {
-      const args = ['--save', '--text', options.text, '--out', outFile];
-      if (options.speaker) {
-        args.push('--speaker', options.speaker);
-      }
-      args.push(...buildTuningArgs(options));
+      const args = [
+        '--save',
+        '--text',
+        options.text,
+        '--out',
+        outFile,
+        ...this.commonInitArgs(),
+        ...this.voiceArgs(options),
+        ...buildTuningArgs(options),
+      ];
       this.logger.log(
-        `synthesize: ${options.speaker ?? '(default)'} "${options.text}" -> ${outFile}`,
+        `synthesize: ${options.voice_db ?? this.defaultVoiceDb ?? '(no voice_db)'}/${options.voice_name ?? this.defaultVoiceName ?? '(first speaker)'} "${options.text}" -> ${outFile}`,
       );
       await this.execAndLogStderr(args);
       return await fs.readFile(outFile);
     } finally {
       await fs.rm(tmpDir, { recursive: true, force: true });
     }
+  }
+
+  // すべての DLL 直叩きコマンドで共通の引数。voice_db を指定するコマンドはこれに加えて --voice-db / --voice-name を追加する。
+  private commonInitArgs(): string[] {
+    return ['--install-dir', this.installDir, '--auth-code', this.authCode];
+  }
+
+  private voiceArgs(options: {
+    voice_db?: string;
+    voice_name?: string;
+  }): string[] {
+    const voiceDb = options.voice_db ?? this.defaultVoiceDb;
+    if (!voiceDb) {
+      throw new Error(
+        'voice_db is required (specify in request body or VOICEROID2_DEFAULT_VOICE_DB env)',
+      );
+    }
+    const args = ['--voice-db', voiceDb];
+    const voiceName = options.voice_name ?? this.defaultVoiceName;
+    if (voiceName) {
+      args.push('--voice-name', voiceName);
+    }
+    return args;
   }
 
   // execFile はタイムアウト等で reject したときも error.stderr に

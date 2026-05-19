@@ -5,91 +5,126 @@
 
 ## プロジェクト概要
 
-VOICEROID2 (Windows GUI アプリ) を REST API として呼び出せるようにする。
+VOICEROID2 を REST API として呼び出せるようにする。
 
 - `api/` — NestJS REST サーバー。
-- `helper/` — VOICEROID2 を Codeer.Friendly + WPF で操作する C# CLI。
-  責務ごとに Locator / Driver / SaveAudioFlow / NativeWindows でクラス分割している。
+- `helper/` — VOICEROID2 同梱の **`aitalked.dll` を P/Invoke で直接叩く** C# CLI。
+  voiceroid_daemon (https://github.com/Nkyoku/voiceroid_daemon) の Aitalk ラッパーを移植している。
+  **VOICEROID2 エディタ (GUI) の起動は不要** (初回 `--get-key` でライセンスキーを抜くときだけ起動が必要)。
 - Docker は使わない。Windows ホストで `helper/*.exe` をビルドして API サーバーから直接 spawn する。
+
+## アーキテクチャ概要
+
+```
+REST request → NestJS (Voiceroid2Service)
+              → spawn helper.exe (one-shot)
+                → aitalked.dll Init → LoadLanguage → LoadVoice → TextToKana → KanaToSpeech
+                → 標準 RIFF WAV を --out に書き出す or SoundPlayer で再生
+              → WAV を読み戻して HTTP レスポンス
+```
+
+helper は呼び出しごとに DLL を初期化する one-shot 設計。初期化に 1〜2 秒かかるので、
+将来パフォーマンスが必要になったら helper を long-running daemon にして stdin/stdout
+で JSON プロトコルを話す形に進化させる。
 
 ## 絶対厳守事項
 
 ### VOICEROID2 のライセンス / アクティベーション
 
 - VOICEROID2 はマシン固定ライセンス。ローカルでインストール & アクティベーションした
-  Windows 環境で動かす想定。アクティベーション情報は VOICEROID2 側が管理しているので、
-  本プロジェクトのファイルを消しても問題ない。
+  Windows 環境で動かす想定。
+- `aitalked.dll` の認証コードシード (= VoiceroidEditor の `AI.Framework.App` の
+  `AppSettings.LicenseKey`) を初回だけ取得する必要がある。手順:
+  1. VOICEROID2 エディタを起動する。
+  2. `voiceroid2-helper.exe --get-key` を実行する (stdout にシードが出る)。
+  3. `.env` の `VOICEROID2_AUTH_CODE` に貼り付ける。
+     以後 VOICEROID2 エディタの起動は不要。
+- 取得した認証コードは VOICEROID2 がインストールされた**このマシンでしか有効でない**。
 - VOICEROID2 本体のアンインストール前にはディアクティベートを忘れない (ユーザー責任)。
 
 ### 同時実行制約
 
-- **VOICEROID2 は 1 インスタンスしか起動できない。**
-  API サーバー側で `Voiceroid2Service` がリクエストを直列化している (`queue` フィールド)。
-  この直列化を絶対に外さないこと。
-- helper.exe は呼び出しごとに既存の VOICEROID2 プロセスへアタッチする。
-  もし VOICEROID2 が起動していなければ helper.exe が起動する。
+- `aitalked.dll` はプロセス内で 1 つしか初期化できない。helper はプロセスごとに DLL を
+  init するが、複数 helper を同時に走らせると DLL のグローバル状態 (ライセンスチェック、
+  ボイスライブラリのロード状態) が競合する可能性がある。
+- API サーバー側で `Voiceroid2Service` がリクエストを直列化している (`queue` フィールド)。
+  この直列化は**絶対に外さないこと**。
+
+### 文字エンコーディング / 入力
+
+- helper.exe の stdout は UTF-8 (`Console.OutputEncoding = UTF8`)。NestJS 側も UTF-8 でデコードする。
+- 入力テキストは内部で ShiftJIS (CP932) に変換して aitalked.dll へ渡す
+  (`AitalkWrapper.UnicodeToShiftJis`)。日本語以外の文字は化ける。
+- 話者切替記号 (`>` 等) は不要。話者は `voice_db` と `voice_name` の引数で指定する。
 
 ## 検証ルール
 
-UI 自動操作のバインディング名はバージョンで揺れる。変更時は以下の手順を守る:
+DLL 直叩きになったので GUI バインディング揺れの検証は不要になった。代わりに以下を守る:
 
-1. **コントロール確認:** 現状の `--talk` が動くことを確認する (再生だけは安定しやすい)。
-2. **実験実施:** バインディング候補を追加 → `--save` を試す。
-3. **コントロール再確認:** `--talk` が壊れていないこと。
-4. **片付け:** 失敗実験で残ったテストファイルを消す。
+1. **認証コードが有効か**: `--list-voice-dbs` が空配列でなく返ること。
+2. **音声合成の golden path**: `--save --text "テスト" --voice-db <db>` で WAV が出ること。
+3. **マスターチューニング**: `--volume / --speed / --pitch / --intonation` が音に反映されること。
+4. **失敗ケース**: `--auth-code` が誤っていれば `AitalkException(LicenseRejected)` が出ること。
 
-## VOICEROID2 自動化の既知ハマりどころ
+## DLL 直叩きで詰まりやすいポイント
 
-### WPF Binding 名のバージョン差異
+### ビルドターゲット
 
-- `helper/Voiceroid2Driver.cs` の `SaveCommandCandidates` 配列に音声保存ボタンの
-  候補を列挙している。ヒットしない場合は `Snoop`/`UI Spy` で実機を見て追加する。
-- `PlayCommand` / `StopCommand` / `MoveToBeginningCommand` が見つからない場合は
-  `RequireBinding` が即 throw する。物理 index フォールバックは意図的に持っていない
-  (壊れたら明示的に直す方針)。
+- `aitalked.dll` は x86 stdcall (`_AITalkAPI_xxx@N`)。
+  helper の csproj は `<PlatformTarget>x86</PlatformTarget>` を**必ず維持**すること。
+  AnyCPU でビルドすると `EntryPointNotFoundException` か `BadImageFormatException` で死ぬ。
 
-### Save Voice ダイアログのフロー
+### DLL 探索パス
 
-VOICEROID2 の「音声保存」は以下のモーダルが連続する:
+- `AitalkWrapper.Initialize` 内で `SetDllDirectory(install_directory)` を呼ぶことで
+  `aitalked.dll` の依存 DLL を VOICEROID2 のフォルダから引いている。
+  helper.exe を VOICEROID2 ディレクトリ以外で動かす場合もこの呼び出しが必須。
 
-1. (場合により) 「テキストが分割されました」等の注意ダイアログ → OK を押す。
-2. SaveFileDialog (Win32 #32770) → ファイル名を埋めて 保存 を押す。
-3. (場合により) 「保存しました」完了ダイアログ → OK を押す。
+### 言語ライブラリのロード
 
-`helper/SaveAudioFlow.cs` が別スレッドで `EnumThreadWindows` を回してこれらを掴んで自動操作している。
-タイトル / ボタンラベル ("保存", "OK", "VOICEROID", "情報" 等) が日本語前提なので
-英語版 VOICEROID2 では動かない (必要なら定数化)。
+- `AITalkAPI_LangLoad` はカレントディレクトリが install_dir 以外だと失敗する。
+  `AitalkWrapper.LoadLanguage` で一時的に `Directory.SetCurrentDirectory` を入れているので
+  そこを削らないこと。
 
 ### 権限の揃え方
 
-- 既定では helper は `asInvoker` (管理者不要)。Codeer.Friendly で他プロセスにアタッチ
-  するには helper と VOICEROID2 が同権限である必要があるので、VOICEROID2 を
-  管理者で起動している場合は `app.manifest` の `level` を `requireAdministrator`
-  に変える (または VOICEROID2 を非管理者で起動する)。「権限を揃える」が原則。
+- 既定では helper は `asInvoker` (管理者不要)。
+- ただし `--get-key` (VoiceroidEditor に DLL inject) を使うときは Codeer.Friendly で他プロセスに
+  アタッチするので、**helper と VOICEROID2 エディタが同権限である必要がある**。
+  VOICEROID2 を管理者で起動している場合は helper も管理者で起動すること
+  (または VOICEROID2 を非管理者で起動する)。「権限を揃える」が原則。
 
-### 文字エンコーディング
+### 出力 WAV のフォーマット
 
-- helper.exe の stdout は UTF-8 (`Console.OutputEncoding = UTF8`)。NestJS 側も UTF-8 でデコードする。
-- 話者切替記号は **半角 `>`** (ASCII 0x3E)。SimpleVoiceroid2Proxy の README に
-  全角 `＞` (U+FF1E, Shift-JIS で 0x81 0x84) と書かれているが、実機検証では
-  半角でないと話者切替が効かない (2026-05 確認)。
-  VOICEROID2 設定で記号は変更可能だが、既定値は半角の前提でコードを書く。
+- 44.1kHz / 16bit / mono。標準 RIFF。
+- voiceroid_daemon の元実装にあった `phon` チャンク (TTS イベントの JSON) は省いている。
+  必要になったら `AitalkWrapper.KanaToSpeech` に書き戻す。
 
 ## API サーバー側ルール
 
 - DTO は `class-validator` + `@nestjs/swagger` の `@ApiProperty` を必ず付ける。
-- Optional プロパティには `@NullToUndefined()` を付け、`null` を `undefined` に正規化する。
-  (`@takecchi/class-transformer` を使う前提)
+- Optional プロパティには `@NullToUndefined()` を付け、`null` を `undefined` に正規化する
+  (`@takecchi/class-transformer` を使う前提)。
 - 例外処理は `GlobalExceptionFilter` に集約。ハンドラ側で try/catch しない。
 - 環境変数:
   - `PORT` — リッスンポート (default: 8181)
   - `VOICEROID2_HELPER_PATH` — helper.exe のフルパス
   - `VOICEROID2_TIMEOUT_MS` — helper 呼び出しタイムアウト (default: 120000)
+  - `VOICEROID2_INSTALL_DIR` — VOICEROID2 インストールディレクトリ
+    (default: `C:\Program Files (x86)\AHS\VOICEROID2`)
+  - `VOICEROID2_AUTH_CODE` — `aitalked.dll` の認証コードシード (必須)
+  - `VOICEROID2_DEFAULT_VOICE_DB` — リクエスト省略時のボイスライブラリ (任意)
+  - `VOICEROID2_DEFAULT_VOICE_NAME` — リクエスト省略時の話者名 (任意)
   - `LOG_LEVEL` — winston ログレベル (default: info)
 
 ## 運用方針
 
-- helper.exe を Visual Studio / `dotnet build` で先にビルドし、生成された `voiceroid2-helper.exe`
-  のパスを `VOICEROID2_HELPER_PATH` で API に渡す。
+- helper.exe を Visual Studio / `dotnet build -c Release` で先にビルドし、生成された
+  `voiceroid2-helper.exe` のパスを `VOICEROID2_HELPER_PATH` で API に渡す。
+- 初回セットアップ:
+  1. VOICEROID2 エディタを起動。
+  2. `voiceroid2-helper.exe --get-key` で認証コードシード取得。
+  3. `.env` の `VOICEROID2_AUTH_CODE` に貼り付け。
+  4. VOICEROID2 エディタは閉じてよい。
 - API サーバー: `cd api && npm ci && npm run build && npm run start:prod`
 - Swagger: http://localhost:8181/api (NODE_ENV != production 時)

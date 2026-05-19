@@ -16,10 +16,23 @@ export class SynthesizeSpeechRequest extends VoiceTuningParams {
     type: String,
     required: false,
     description:
-      '話者名 (例: 結月ゆかり)。指定するとVOICEROID2の話者切替記号 "<speaker>>" を先頭に挿入します。',
+      'ボイスライブラリ名 (Voice/ フォルダ名、例: kiritan_44)。' +
+      ' 省略時は環境変数 VOICEROID2_DEFAULT_VOICE_DB が使われる。',
   })
   @NullToUndefined()
   @IsOptional()
   @IsString()
-  speaker?: string;
+  voice_db?: string;
+
+  @ApiProperty({
+    type: String,
+    required: false,
+    description:
+      '話者名 (例: 結月ゆかり)。voice_db 内に含まれる話者を指定する。' +
+      ' 省略時は voice_db の先頭話者が使われる。',
+  })
+  @NullToUndefined()
+  @IsOptional()
+  @IsString()
+  voice_name?: string;
 }
