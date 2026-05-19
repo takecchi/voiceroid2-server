@@ -183,18 +183,13 @@ internal sealed class Voiceroid2Driver : IDisposable
         _stopBtn.EmulateClick();
         _textBox.EmulateChangeText(payload);
 
-        // 音声保存ボタンを押すと SaveFileDialog がモーダルで出る。
-        // EmulateClick はモーダルが閉じるまで戻らないため、別スレッドで
-        // ダイアログを掴んで自動操作する必要がある。
-        var dialogPump = new Thread(() => new SaveAudioFlow(_mainWindow.Handle, absPath).Run())
-        {
-            IsBackground = true,
-            Name = "save-dialog-pump",
-        };
-        dialogPump.Start();
-
-        _saveBtn.EmulateClick();
-        dialogPump.Join(TimeSpan.FromMinutes(2));
+        // 音声保存ボタンを押すと VOICEROID2 が独自の WPF モーダル
+        // (title="音声保存", class=HwndWrapper[...]) を ShowDialog する。
+        // 同期 EmulateClick だとターゲット UI スレッドがモーダル内に閉じ込められ
+        // 返らないため Async() で発火だけして、ダイアログ自動操作は
+        // SaveAudioFlow に任せる (helper メインスレッド上で動かす)。
+        _saveBtn.EmulateClick(new Async());
+        new SaveAudioFlow(_app, _mainWindow, absPath).Run();
 
         // WAV ファイル生成を最大 30 秒待つ (保存処理に時間がかかることがある)
         var waitSw = Stopwatch.StartNew();

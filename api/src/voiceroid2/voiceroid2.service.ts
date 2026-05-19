@@ -67,10 +67,7 @@ export class Voiceroid2Service {
     this.logger.log(
       `talk: ${options.speaker ?? '(default)'} "${options.text}"`,
     );
-    const { stderr } = await this.cli.exec(args);
-    if (stderr) {
-      this.logger.warn(`helper stderr: ${stderr}`);
-    }
+    await this.execAndLogStderr(args);
   }
 
   private async doSynthesize(options: SynthesizeOptions): Promise<Buffer> {
@@ -84,13 +81,28 @@ export class Voiceroid2Service {
       this.logger.log(
         `synthesize: ${options.speaker ?? '(default)'} "${options.text}" -> ${outFile}`,
       );
+      await this.execAndLogStderr(args);
+      return await fs.readFile(outFile);
+    } finally {
+      await fs.rm(tmpDir, { recursive: true, force: true });
+    }
+  }
+
+  // execFile はタイムアウト等で reject したときも error.stderr に
+  // 子プロセスが書き出した stderr 文字列を保持している (Node のドキュメント参照)。
+  // 失敗時の調査ができるように、成功・失敗どちらでも stderr を warn ログに出す。
+  private async execAndLogStderr(args: string[]): Promise<void> {
+    try {
       const { stderr } = await this.cli.exec(args);
       if (stderr) {
         this.logger.warn(`helper stderr: ${stderr}`);
       }
-      return await fs.readFile(outFile);
-    } finally {
-      await fs.rm(tmpDir, { recursive: true, force: true });
+    } catch (e) {
+      const err = e as Error & { stderr?: string; stdout?: string };
+      if (err.stderr) {
+        this.logger.warn(`helper stderr (failed): ${err.stderr}`);
+      }
+      throw e;
     }
   }
 }
