@@ -8,15 +8,18 @@ const execFileAsync = promisify(execFile);
 /**
  * VOICEROID2 のヘルパー .exe を呼び出すラッパー。
  *
- * ヘルパーは /helper にある C# コンソールアプリ (Codeer.Friendly ベース) で、
- * VOICEROID2 の WPF UI を制御して以下を行う:
- *  - --list-speakers           : 利用可能な話者を1行ずつ stdout に出力
- *  - --talk --text "..."       : テキストを再生 (スピーカー出力のみ)
- *  - --save --text "..." --out FILE
- *                              : VOICEROID2 の「音声保存」フローでWAVを書き出す
+ * ヘルパーは /helper にある C# コンソールアプリで、VOICEROID2 同梱の `aitalked.dll` を
+ * P/Invoke で直接叩いて音声合成を行う (旧 Codeer.Friendly + WPF UI 自動操作の置き換え)。
  *
- * 共通オプション:
- *  - --speaker NAME            : 先頭で話者切替する (例: 結月ゆかり)
+ * 主要サブコマンド:
+ *  - --list-voice-dbs                : インストール済みボイスライブラリを 1 行ずつ stdout
+ *  - --list-speakers --voice-db NAME : ボイスライブラリ内の話者名を 1 行ずつ stdout
+ *  - --talk --text "..."             : 既定スピーカーで再生のみ (.NET SoundPlayer 同期再生)
+ *  - --save --text "..." --out FILE  : 44.1kHz/16bit/mono の RIFF WAV をファイル出力
+ *  - --get-key                       : (初回セットアップ) VoiceroidEditor から認証コードシードを取得
+ *
+ * 終了コードは helper/Program.cs の規約に従う (Service 側で HTTP ステータスに変換):
+ *  - 0 成功 / 1 内部エラー / 2 ユーザー入力エラー / 3 サーバー設定 (認証コード等) エラー
  */
 @Injectable()
 export class Voiceroid2Cli {

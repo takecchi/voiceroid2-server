@@ -1,18 +1,18 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>net481</TargetFramework>
+    <!-- aitalked.dll は x86 stdcall (_AITalkAPI_xxx@N) なので必ず x86 を維持 -->
     <PlatformTarget>x86</PlatformTarget>
     <OutputType>Exe</OutputType>
     <LangVersion>latest</LangVersion>
     <Nullable>enable</Nullable>
     <ImplicitUsings>disable</ImplicitUsings>
     <ApplicationManifest>app.manifest</ApplicationManifest>
-    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
     <AssemblyName>voiceroid2-helper</AssemblyName>
     <RootNamespace>Voiceroid2Helper</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
+    <!-- Codeer.Friendly は get-key コマンド (VoiceroidEditor に DLL inject して LicenseKey を抜く) でのみ使用 -->
     <PackageReference Include="Codeer.Friendly.Windows.Grasp" Version="2.16.0" />
-    <PackageReference Include="RM.Friendly.WPFStandardControls" Version="1.63.0" />
   </ItemGroup>
 </Project>

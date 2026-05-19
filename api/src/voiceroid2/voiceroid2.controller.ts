@@ -1,9 +1,18 @@
-import { Body, Controller, Get, Post, Res, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  Post,
+  Res,
+  UseGuards,
+} from '@nestjs/common';
 import {
   ApiBadRequestResponse,
   ApiCreatedResponse,
   ApiOkResponse,
   ApiOperation,
+  ApiParam,
   ApiProduces,
   ApiSecurity,
   ApiTags,
@@ -13,7 +22,7 @@ import type { Response } from 'express';
 import { Voiceroid2Service } from './voiceroid2.service';
 import { Health } from './dto/health.dto';
 import { WorkerStatus } from './dto/status.dto';
-import { SpeakerList } from './dto/speaker-list.dto';
+import { SpeakerList, VoiceDbList } from './dto/speaker-list.dto';
 import { SynthesizeSpeechRequest } from './dto/synthesize-speech.dto';
 import { TalkRequest, TalkResult } from './dto/talk.dto';
 import {
@@ -46,17 +55,40 @@ export class Voiceroid2Controller {
     return this.service.getStatus();
   }
 
-  @Get('speakers')
+  @Get('voice-dbs')
+  @UseGuards(ApiKeyGuard)
+  @ApiSecurity(API_KEY_SECURITY_NAME)
+  @ApiOperation({
+    operationId: 'getVoiceDbs',
+    summary: 'インストール済みのボイスライブラリ一覧を取得',
+  })
+  @ApiOkResponse({ type: VoiceDbList })
+  @ApiUnauthorizedResponse({ description: 'API キーが不正' })
+  async listVoiceDbs(): Promise<VoiceDbList> {
+    return { voice_dbs: await this.service.listVoiceDbs() };
+  }
+
+  @Get('voice-dbs/:voice_db/speakers')
   @UseGuards(ApiKeyGuard)
   @ApiSecurity(API_KEY_SECURITY_NAME)
   @ApiOperation({
     operationId: 'getSpeakers',
-    summary: '利用可能な話者一覧を取得',
+    summary: '指定ボイスライブラリ内の話者名一覧を取得',
+  })
+  @ApiParam({
+    name: 'voice_db',
+    type: String,
+    description: 'ボイスライブラリ名 (例: kiritan_44)',
   })
   @ApiOkResponse({ type: SpeakerList })
   @ApiUnauthorizedResponse({ description: 'API キーが不正' })
-  async listSpeakers(): Promise<SpeakerList> {
-    return { speakers: await this.service.listSpeakers() };
+  async listSpeakers(
+    @Param('voice_db') voice_db: string,
+  ): Promise<SpeakerList> {
+    return {
+      voice_db,
+      speakers: await this.service.listSpeakers(voice_db),
+    };
   }
 
   @Post('talk')
@@ -72,7 +104,8 @@ export class Voiceroid2Controller {
   async talk(@Body() request: TalkRequest): Promise<TalkResult> {
     await this.service.talk({
       text: request.text,
-      speaker: request.speaker,
+      voice_db: request.voice_db,
+      voice_name: request.voice_name,
       volume: request.volume,
       speed: request.speed,
       pitch: request.pitch,
@@ -98,7 +131,8 @@ export class Voiceroid2Controller {
   ) {
     const wav = await this.service.synthesize({
       text: request.text,
-      speaker: request.speaker,
+      voice_db: request.voice_db,
+      voice_name: request.voice_name,
       volume: request.volume,
       speed: request.speed,
       pitch: request.pitch,

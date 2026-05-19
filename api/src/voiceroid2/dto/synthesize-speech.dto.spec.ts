@@ -17,16 +17,19 @@ describe('SynthesizeSpeechRequest', () => {
   it('should pass with valid text only', async () => {
     const result = await transform({ text: 'こんにちは' });
     expect(result.text).toBe('こんにちは');
-    expect(result.speaker).toBeUndefined();
+    expect(result.voice_db).toBeUndefined();
+    expect(result.voice_name).toBeUndefined();
   });
 
-  it('should pass with text + speaker', async () => {
+  it('should pass with text + voice_db + voice_name', async () => {
     const result = await transform({
       text: 'てすと',
-      speaker: '結月ゆかり',
+      voice_db: 'yukari_44',
+      voice_name: '結月ゆかり',
     });
     expect(result.text).toBe('てすと');
-    expect(result.speaker).toBe('結月ゆかり');
+    expect(result.voice_db).toBe('yukari_44');
+    expect(result.voice_name).toBe('結月ゆかり');
   });
 
   it('should reject when text is missing', async () => {
@@ -42,9 +45,14 @@ describe('SynthesizeSpeechRequest', () => {
     expect(result.text).toBe('123');
   });
 
-  it('should convert null optional speaker to undefined', async () => {
-    const result = await transform({ text: 'テスト', speaker: null });
-    expect(result.speaker).toBeUndefined();
+  it('should convert null optional voice_db / voice_name to undefined', async () => {
+    const result = await transform({
+      text: 'テスト',
+      voice_db: null,
+      voice_name: null,
+    });
+    expect(result.voice_db).toBeUndefined();
+    expect(result.voice_name).toBeUndefined();
   });
 
   it('should reject unknown properties', async () => {
