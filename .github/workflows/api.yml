@@ -35,6 +35,12 @@ jobs:
       - name: Type check
         run: npm run tsc -w api
 
+      - name: Lint
+        run: npm run lint -w api
+
+      - name: Test
+        run: npm test -w api
+
       - name: Build
         run: npm run build -w api
 

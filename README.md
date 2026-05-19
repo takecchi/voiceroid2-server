@@ -71,7 +71,20 @@ PORT=8181
 VOICEROID2_HELPER_PATH=C:\path\to\voiceroid2-server\helper\bin\Release\net481\voiceroid2-helper.exe
 VOICEROID2_TIMEOUT_MS=120000
 LOG_LEVEL=info
+# 任意。設定するとリクエストに X-API-Key ヘッダー必須 (一致しないと 401)
+API_KEY=
 ```
+
+### API キー (任意)
+
+`API_KEY` 環境変数を設定すると、`/voiceroid2/health` 以外のエンドポイントは
+`X-API-Key` ヘッダーで認証する。未設定なら認証無効。
+
+```powershell
+curl -H "X-API-Key: $env:API_KEY" http://localhost:8181/voiceroid2/speakers
+```
+
+Swagger UI からは右上の Authorize ボタンで設定できる。
 
 ### 4. 起動
 

@@ -6,12 +6,26 @@ import { IncomingMessage } from 'node:http';
 import express from 'express';
 import { LoggingService } from '@/shared/logging.service';
 import { GlobalExceptionFilter } from '@/global-exception.filter';
+import {
+  API_KEY_HEADER,
+  API_KEY_SECURITY_NAME,
+} from '@/shared/guards/api-key.guard';
 
 export const createConfig = () => {
   return new DocumentBuilder()
     .setTitle('VOICEROID2 API')
     .setDescription('The VOICEROID2 API description')
     .setVersion(process.env.npm_package_version ?? '0.0.1')
+    .addApiKey(
+      {
+        type: 'apiKey',
+        name: API_KEY_HEADER,
+        in: 'header',
+        description:
+          'API_KEY 環境変数が設定されている場合に必要。未設定なら認証は無効',
+      },
+      API_KEY_SECURITY_NAME,
+    )
     .build();
 };
 
