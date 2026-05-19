@@ -1,0 +1,28 @@
+{
+  "name": "voiceroid2-server",
+  "version": "0.0.1",
+  "packageManager": "npm@11.6.4",
+  "description": "VOICEROID2 REST API server",
+  "private": true,
+  "license": "UNLICENSED",
+  "workspaces": [
+    "api"
+  ],
+  "scripts": {
+    "build": "npm run build:api && npm run build:helper",
+    "build:api": "npm run build -w api",
+    "build:helper": "dotnet build helper/Voiceroid2Helper.csproj -c Release",
+    "clean:helper": "dotnet clean helper/Voiceroid2Helper.csproj",
+    "format": "prettier --write \"**/*.{js,jsx,mjs,ts,tsx,css,scss,html,json,md}\"",
+    "lint": "npm run lint -w api",
+    "lint-staged": "lint-staged",
+    "prepare": "husky",
+    "start": "npm run start:prod -w api",
+    "tsc": "npm run tsc -w api"
+  },
+  "devDependencies": {
+    "husky": "9.1.7",
+    "lint-staged": "16.2.7",
+    "prettier": "3.7.4"
+  }
+}
