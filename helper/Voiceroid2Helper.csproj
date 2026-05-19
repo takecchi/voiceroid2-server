@@ -13,7 +13,7 @@
     <RootNamespace>Voiceroid2Helper</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
-    <!-- Codeer.Friendly は --get-key (VoiceroidEditor に DLL inject して LicenseKey を抜く) でのみ使用 -->
+    <!-- Codeer.Friendly は get-key コマンド (VoiceroidEditor に DLL inject して LicenseKey を抜く) でのみ使用 -->
     <PackageReference Include="Codeer.Friendly.Windows.Grasp" Version="2.16.0" />
   </ItemGroup>
 </Project>
