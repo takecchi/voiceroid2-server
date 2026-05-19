@@ -8,7 +8,6 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>disable</ImplicitUsings>
     <ApplicationManifest>app.manifest</ApplicationManifest>
-    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
     <AssemblyName>voiceroid2-helper</AssemblyName>
     <RootNamespace>Voiceroid2Helper</RootNamespace>
   </PropertyGroup>

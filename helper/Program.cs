@@ -40,6 +40,11 @@ internal static class Program
     {
         Console.OutputEncoding = Encoding.UTF8;
 
+        // 終了コード規約 (API 側はこれを HTTP ステータスにマップする):
+        //   0 ... 成功
+        //   1 ... 内部エラー (バグ、DLL 例外、タイムアウト等)
+        //   2 ... ユーザー入力起因のエラー (未知の voice_db / voice_name、CLI 引数不正)
+        //   3 ... サーバー設定起因のエラー (認証コード不正、ライセンス期限切れ等)
         try
         {
             var parsed = ParseArgs(args);
@@ -57,7 +62,17 @@ internal static class Program
         catch (AitalkException ex)
         {
             LogWriter.Error("aitalk failure", ex);
-            return 1;
+            return ex.Kind switch
+            {
+                AitalkErrorKind.UserInput => 2,
+                AitalkErrorKind.ServerConfig => 3,
+                _ => 1,
+            };
+        }
+        catch (ArgumentException ex)
+        {
+            LogWriter.Error("invalid argument", ex);
+            return 2;
         }
         catch (Exception ex)
         {

@@ -84,7 +84,7 @@ namespace Voiceroid2Helper.Aitalk
                 var speaker_parameter = SpeakerParameters.FirstOrDefault(x => x.VoiceName == value);
                 if (speaker_parameter == null)
                 {
-                    throw new AitalkException($"話者'{value}'は存在しません。");
+                    throw new AitalkException($"話者'{value}'は存在しません。", AitalkErrorKind.UserInput);
                 }
                 CurrentSpeakerParameter = speaker_parameter;
                 TtsParam.VoiceName = value;

@@ -544,11 +544,42 @@ namespace Voiceroid2Helper.Aitalk
         private static extern bool SetDllDirectory(string lpPathName);
     }
 
+    /// <summary>
+    /// AitalkException がどのカテゴリのエラーかを表す。
+    /// Program.cs の catch 節でプロセス終了コードに変換し、API 側で HTTP ステータスにマップする。
+    /// </summary>
+    public enum AitalkErrorKind
+    {
+        /// <summary>内部エラー (バグ / DLL 異常 / タイムアウト)。HTTP 500 系にマップ。</summary>
+        Internal,
+        /// <summary>ユーザー入力起因 (未知の voice_db / voice_name など)。HTTP 400 にマップ。</summary>
+        UserInput,
+        /// <summary>サーバー設定起因 (認証コード不正、ライセンス期限切れなど)。HTTP 500 にマップしつつメッセージで誘導。</summary>
+        ServerConfig,
+    }
+
     public class AitalkException : Exception
     {
-        public AitalkException() { }
-        public AitalkException(string message) : base(message) { }
-        internal AitalkException(string message, AitalkCore.Result result) : base($"{message}({result})") { }
-        public AitalkException(string message, Exception inner) : base(message, inner) { }
+        public AitalkErrorKind Kind { get; }
+
+        public AitalkException() : base() { Kind = AitalkErrorKind.Internal; }
+        public AitalkException(string message) : base(message) { Kind = AitalkErrorKind.Internal; }
+        public AitalkException(string message, AitalkErrorKind kind) : base(message) { Kind = kind; }
+        internal AitalkException(string message, AitalkCore.Result result) : base($"{message}({result})")
+        {
+            Kind = ClassifyResult(result);
+        }
+        public AitalkException(string message, Exception inner) : base(message, inner) { Kind = AitalkErrorKind.Internal; }
+
+        private static AitalkErrorKind ClassifyResult(AitalkCore.Result r) => r switch
+        {
+            AitalkCore.Result.PathNotFound => AitalkErrorKind.UserInput,
+            AitalkCore.Result.FileNotFound => AitalkErrorKind.UserInput,
+            AitalkCore.Result.InvalidArgument => AitalkErrorKind.UserInput,
+            AitalkCore.Result.LicenseAbsent => AitalkErrorKind.ServerConfig,
+            AitalkCore.Result.LicenseExpired => AitalkErrorKind.ServerConfig,
+            AitalkCore.Result.LicenseRejected => AitalkErrorKind.ServerConfig,
+            _ => AitalkErrorKind.Internal,
+        };
     }
 }

@@ -50,6 +50,22 @@ helper は呼び出しごとに DLL を初期化する one-shot 設計。初期�
 - API サーバー側で `Voiceroid2Service` がリクエストを直列化している (`queue` フィールド)。
   この直列化は**絶対に外さないこと**。
 
+### helper の終了コード規約
+
+API 側 (`Voiceroid2Service.mapHelperError`) がこのコードを HTTP ステータスにマップする。
+helper を改修するときは `helper/Program.cs` のコメントと API 側の定数を同時に追従させる。
+
+| code | 意味                                                            | API 側のマップ                                                                                                                                                                                          |
+| ---- | --------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 0    | 成功                                                            | -                                                                                                                                                                                                       |
+| 1    | 内部エラー (バグ / タイムアウト)                                | 500                                                                                                                                                                                                     |
+| 2    | ユーザー入力エラー (未知の voice_db / voice_name、CLI 引数不正) | 400 (`BadRequestException`) — helper の stderr 最終行 (例: `AitalkException: 話者'xxx'は存在しません。`) を message に転送                                                                              |
+| 3    | サーバー設定エラー (認証コード不正 / ライセンス期限切れ)        | 503 (`ServiceUnavailableException`) + "VOICEROID2_AUTH_CODE / ライセンスを確認" メッセージ。500 を使わない理由は `GlobalExceptionFilter` が `InternalServerErrorException` のメッセージを隠蔽するため。 |
+
+`AitalkException` には `Kind` プロパティ (`AitalkErrorKind.{Internal,UserInput,ServerConfig}`)
+があり、`AitalkCore.Result` を元に自動分類される。message-only ctor から throw する場合は
+明示的に `AitalkErrorKind.UserInput` を渡すこと (例: 未知の voice_name)。
+
 ### 文字エンコーディング / 入力
 
 - helper.exe の stdout は UTF-8 (`Console.OutputEncoding = UTF8`)。NestJS 側も UTF-8 でデコードする。
@@ -119,12 +135,16 @@ DLL 直叩きになったので GUI バインディング揺れの検証は不�
 
 ## 運用方針
 
-- helper.exe を Visual Studio / `dotnet build -c Release` で先にビルドし、生成された
-  `voiceroid2-helper.exe` のパスを `VOICEROID2_HELPER_PATH` で API に渡す。
-- 初回セットアップ:
-  1. VOICEROID2 エディタを起動。
-  2. `voiceroid2-helper.exe --get-key` で認証コードシード取得。
-  3. `.env` の `VOICEROID2_AUTH_CODE` に貼り付け。
-  4. VOICEROID2 エディタは閉じてよい。
-- API サーバー: `cd api && npm ci && npm run build && npm run start:prod`
+- リポジトリは npm workspaces 構成 (root `package.json` の `workspaces: ["api"]`)。
+  **`npm ci` / `npm run build` などは必ずリポジトリルートから叩く** こと
+  (`api/` 直下で `npm ci` を実行すると `prepare` スクリプトの husky が見つからず失敗する)。
+- 一連の流れ:
+  1. **helper をビルド**: `npm run build:helper`
+     (内部で `dotnet build helper/Voiceroid2Helper.csproj -c Release` を呼ぶ)。
+  2. **初回のみ認証コードシードを取得**:
+     - VOICEROID2 エディタを起動。
+     - `helper\bin\Release\net481\voiceroid2-helper.exe --get-key` を実行。
+     - 出力をコピーして `.env` の `VOICEROID2_AUTH_CODE` に貼り付け。
+     - VOICEROID2 エディタは閉じてよい (以後 API は DLL 直叩きで動く)。
+  3. **API をビルド・起動**: `npm ci && npm run build:api && npm start`
 - Swagger: http://localhost:8181/api (NODE_ENV != production 時)

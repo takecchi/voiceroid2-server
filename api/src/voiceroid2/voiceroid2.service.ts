@@ -1,4 +1,9 @@
-import { Injectable, Logger } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  Logger,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as fs from 'fs/promises';
 import * as path from 'path';
@@ -6,6 +11,11 @@ import * as os from 'os';
 import { Voiceroid2Cli } from './voiceroid2-cli';
 import { WorkerStatus } from './dto/status.dto';
 import { parseLines } from '@/shared/utils/parse-lines';
+
+// helper.exe の終了コード規約 (helper/Program.cs と合わせる):
+//   1 = 内部エラー / 2 = ユーザー入力エラー / 3 = サーバー設定エラー
+const HELPER_EXIT_USER_INPUT = 2;
+const HELPER_EXIT_SERVER_CONFIG = 3;
 
 interface VoiceTuning {
   volume?: number;
@@ -184,7 +194,7 @@ export class Voiceroid2Service {
   }): string[] {
     const voiceDb = options.voice_db ?? this.defaultVoiceDb;
     if (!voiceDb) {
-      throw new Error(
+      throw new BadRequestException(
         'voice_db is required (specify in request body or VOICEROID2_DEFAULT_VOICE_DB env)',
       );
     }
@@ -199,6 +209,7 @@ export class Voiceroid2Service {
   // execFile はタイムアウト等で reject したときも error.stderr に
   // 子プロセスが書き出した stderr 文字列を保持している (Node のドキュメント参照)。
   // 失敗時の調査ができるように、成功・失敗どちらでも stderr を warn ログに出す。
+  // また helper の終了コード規約 (1/2/3) を HTTP ステータスに反映する。
   private async execAndLogStderr(args: string[]): Promise<void> {
     try {
       const { stderr } = await this.cli.exec(args);
@@ -206,11 +217,56 @@ export class Voiceroid2Service {
         this.logger.warn(`helper stderr: ${stderr}`);
       }
     } catch (e) {
-      const err = e as Error & { stderr?: string; stdout?: string };
+      const err = e as Error & {
+        stderr?: string;
+        stdout?: string;
+        code?: number | string;
+      };
       if (err.stderr) {
         this.logger.warn(`helper stderr (failed): ${err.stderr}`);
       }
-      throw e;
+      throw this.mapHelperError(err);
     }
   }
+
+  // helper.exe の exit code を HTTP 例外に変換する。stderr の最後の "error" 行を
+  // メッセージとして拾えれば、ユーザーに返るレスポンスがそこそこ親切になる。
+  private mapHelperError(
+    err: Error & { stderr?: string; code?: number | string },
+  ): Error {
+    if (typeof err.code !== 'number') {
+      // ETIMEDOUT / 起動失敗等。コードが string で来る — 内部扱い。
+      return err;
+    }
+    const detail = extractHelperErrorLine(err.stderr) ?? err.message;
+    if (err.code === HELPER_EXIT_USER_INPUT) {
+      return new BadRequestException(detail);
+    }
+    if (err.code === HELPER_EXIT_SERVER_CONFIG) {
+      // ServiceUnavailable (503) を使う理由:
+      //   GlobalExceptionFilter は InternalServerErrorException のメッセージを隠蔽するが
+      //   (情報リーク抑止)、ServerConfig エラーは「VOICEROID2_AUTH_CODE を直して再起動」
+      //   というアクションを運用者に伝える必要があるためメッセージを温存したい。
+      //   503 は "サーバー側の都合で一時的に処理できない" 意味で語感的にも合う。
+      return new ServiceUnavailableException(
+        `helper server-config error: ${detail} (VOICEROID2_AUTH_CODE / ライセンスを確認してください)`,
+      );
+    }
+    return err;
+  }
+}
+
+// helper の LogWriter.Error 出力 ("HH:mm:ss.fff error LABEL :: ExceptionType: message")
+// から末尾の有意なメッセージだけを抜き出す。なければ undefined を返し、呼び出し元で
+// fallback メッセージを使う。
+function extractHelperErrorLine(stderr?: string): string | undefined {
+  if (!stderr) return undefined;
+  const errorLine = stderr
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter((l) => / error /.test(l))
+    .pop();
+  if (!errorLine) return undefined;
+  const idx = errorLine.indexOf(' :: ');
+  return idx >= 0 ? errorLine.slice(idx + 4) : errorLine;
 }
