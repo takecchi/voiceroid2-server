@@ -4,6 +4,7 @@ import * as path from 'path';
 import * as os from 'os';
 import { Voiceroid2Cli } from './voiceroid2-cli';
 import { WorkerStatus } from './dto/status.dto';
+import { parseLines } from '@/shared/utils/parse-lines';
 
 export interface SynthesizeOptions {
   text: string;
@@ -33,7 +34,7 @@ export class Voiceroid2Service {
 
   async listSpeakers(): Promise<string[]> {
     const { stdout } = await this.cli.exec(['--list-speakers']);
-    return this.parseLines(stdout);
+    return parseLines(stdout);
   }
 
   async talk(options: TalkOptions): Promise<void> {
@@ -42,13 +43,6 @@ export class Voiceroid2Service {
 
   async synthesize(options: SynthesizeOptions): Promise<Buffer> {
     return this.enqueue(() => this.doSynthesize(options));
-  }
-
-  parseLines(stdout: string): string[] {
-    return stdout
-      .split(/\r?\n/)
-      .map((line) => line.trim())
-      .filter((line) => line.length > 0);
   }
 
   private enqueue<T>(fn: () => Promise<T>): Promise<T> {

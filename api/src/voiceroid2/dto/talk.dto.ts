@@ -23,10 +23,10 @@ export class TalkRequest {
   speaker?: string;
 }
 
-export class TalkResponse {
-  @ApiProperty({ type: Boolean })
+export class TalkResult {
+  @ApiProperty({ type: Boolean, description: '発話を受け付けたか' })
   success: boolean;
 
-  @ApiProperty({ type: String })
+  @ApiProperty({ type: String, description: '結果メッセージ' })
   message: string;
 }

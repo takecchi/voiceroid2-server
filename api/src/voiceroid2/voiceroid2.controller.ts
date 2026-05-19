@@ -13,7 +13,7 @@ import { Health } from './dto/health.dto';
 import { WorkerStatus } from './dto/status.dto';
 import { SpeakerList } from './dto/speaker-list.dto';
 import { SynthesizeSpeechRequest } from './dto/synthesize-speech.dto';
-import { TalkRequest, TalkResponse } from './dto/talk.dto';
+import { TalkRequest, TalkResult } from './dto/talk.dto';
 
 @ApiTags('voiceroid2')
 @Controller('voiceroid2')
@@ -52,9 +52,9 @@ export class Voiceroid2Controller {
     operationId: 'talk',
     summary: 'テキストをVOICEROID2に発話させる (スピーカー出力のみ)',
   })
-  @ApiOkResponse({ type: TalkResponse })
+  @ApiOkResponse({ type: TalkResult })
   @ApiBadRequestResponse({ description: '不正なリクエスト' })
-  async talk(@Body() request: TalkRequest): Promise<TalkResponse> {
+  async talk(@Body() request: TalkRequest): Promise<TalkResult> {
     await this.service.talk({
       text: request.text,
       speaker: request.speaker,
