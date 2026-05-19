@@ -4,7 +4,9 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Threading;
+using System.Windows;
 using System.Windows.Controls;
+using Codeer.Friendly;
 using Codeer.Friendly.Windows;
 using Codeer.Friendly.Windows.Grasp;
 using RM.Friendly.WPFStandardControls;
@@ -102,13 +104,13 @@ internal sealed class Voiceroid2Driver : IDisposable
                     continue;
                 }
 
-                var tree = editor.LogicalTree();
-                var textBox = tree.ByType<TextBox>().FirstOrDefault()
+                IWPFDependencyObjectCollection<DependencyObject> tree = editor.LogicalTree();
+                AppVar textBox = tree.ByType<TextBox>().FirstOrDefault()
                     ?? throw new InvalidOperationException("text input control not found");
-                var play = RequireBinding(tree, PlayCommand);
-                var stop = RequireBinding(tree, StopCommand);
-                var seekHead = FindOptionalBinding(tree, SeekToHeadCommandCandidates);
-                var save = FindOptionalBinding(tree, SaveCommandCandidates);
+                AppVar play = RequireBinding(tree, PlayCommand);
+                AppVar stop = RequireBinding(tree, StopCommand);
+                AppVar? seekHead = FindOptionalBinding(tree, SeekToHeadCommandCandidates);
+                AppVar? save = FindOptionalBinding(tree, SaveCommandCandidates);
 
                 LogWriter.Info("editor ready");
                 return new Voiceroid2Driver(
@@ -238,24 +240,21 @@ internal sealed class Voiceroid2Driver : IDisposable
         }
     }
 
-    // tree の静的型 (LogicalTree() の戻り値) はバージョンで揺れるので dynamic で受ける。
-    // 内部の ByBinding(...) も dynamic 経由になるが、結果を非ジェネリック IEnumerable に
-    // キャストすれば LINQ に依存せず先頭要素を取り出せる。
-    private static dynamic RequireBinding(dynamic tree, string bindingName)
+    private static AppVar RequireBinding(
+        IWPFDependencyObjectCollection<DependencyObject> tree, string bindingName)
     {
-        foreach (var hit in (System.Collections.IEnumerable)tree.ByBinding(bindingName))
-        {
-            return hit;
-        }
-        throw new InvalidOperationException(
-            $"binding `{bindingName}` not found in editor view");
+        return tree.ByBinding(bindingName).FirstOrDefault()
+            ?? throw new InvalidOperationException(
+                $"binding `{bindingName}` not found in editor view");
     }
 
-    private static dynamic? FindOptionalBinding(dynamic tree, IEnumerable<string> candidates)
+    private static AppVar? FindOptionalBinding(
+        IWPFDependencyObjectCollection<DependencyObject> tree, IEnumerable<string> candidates)
     {
         foreach (var name in candidates)
         {
-            foreach (var hit in (System.Collections.IEnumerable)tree.ByBinding(name))
+            var hit = tree.ByBinding(name).FirstOrDefault();
+            if (hit != null)
             {
                 LogWriter.Info($"resolved binding: {name}");
                 return hit;
