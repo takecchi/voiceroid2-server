@@ -8,7 +8,6 @@ using System.Windows.Controls;
 using Codeer.Friendly.Windows;
 using Codeer.Friendly.Windows.Grasp;
 using RM.Friendly.WPFStandardControls;
-// ReSharper disable UnusedMember.Local
 
 namespace Voiceroid2Helper;
 
@@ -239,20 +238,24 @@ internal sealed class Voiceroid2Driver : IDisposable
         }
     }
 
-    private static dynamic RequireBinding(WPFLogicalTree tree, string bindingName)
+    // tree の静的型 (LogicalTree() の戻り値) はバージョンで揺れるので dynamic で受ける。
+    // 内部の ByBinding(...) も dynamic 経由になるが、結果を非ジェネリック IEnumerable に
+    // キャストすれば LINQ に依存せず先頭要素を取り出せる。
+    private static dynamic RequireBinding(dynamic tree, string bindingName)
     {
-        var hit = tree.ByBinding(bindingName).FirstOrDefault()
-            ?? throw new InvalidOperationException(
-                $"binding `{bindingName}` not found in editor view");
-        return hit;
+        foreach (var hit in (System.Collections.IEnumerable)tree.ByBinding(bindingName))
+        {
+            return hit;
+        }
+        throw new InvalidOperationException(
+            $"binding `{bindingName}` not found in editor view");
     }
 
-    private static dynamic? FindOptionalBinding(WPFLogicalTree tree, IEnumerable<string> candidates)
+    private static dynamic? FindOptionalBinding(dynamic tree, IEnumerable<string> candidates)
     {
         foreach (var name in candidates)
         {
-            var hit = tree.ByBinding(name).FirstOrDefault();
-            if (hit != null)
+            foreach (var hit in (System.Collections.IEnumerable)tree.ByBinding(name))
             {
                 LogWriter.Info($"resolved binding: {name}");
                 return hit;
