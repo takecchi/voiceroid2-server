@@ -33,7 +33,10 @@ export class Voiceroid2Service {
   }
 
   async listSpeakers(): Promise<string[]> {
-    const { stdout } = await this.cli.exec(['--list-speakers']);
+    const { stdout, stderr } = await this.cli.exec(['--list-speakers']);
+    if (stderr) {
+      this.logger.warn(`helper stderr: ${stderr}`);
+    }
     return parseLines(stdout);
   }
 

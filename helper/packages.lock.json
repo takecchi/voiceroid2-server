@@ -1,0 +1,59 @@
+{
+  "version": 1,
+  "dependencies": {
+    ".NETFramework,Version=v4.8.1": {
+      "Codeer.Friendly.Windows.Grasp": {
+        "type": "Direct",
+        "requested": "[2.16.0, )",
+        "resolved": "2.16.0",
+        "contentHash": "u4KiwsITpzt+lVTaCE/gObg1ELQ1Mh29Qq2FoeCVQ60BkllIj3IRVOKZ9PF86fcT4omc/ptanhTJ74dtp9lNRA==",
+        "dependencies": {
+          "Codeer.Friendly.Windows": "2.18.0"
+        }
+      },
+      "Microsoft.NETFramework.ReferenceAssemblies": {
+        "type": "Direct",
+        "requested": "[1.0.3, )",
+        "resolved": "1.0.3",
+        "contentHash": "vUc9Npcs14QsyOD01tnv/m8sQUnGTGOw1BCmKcv77LBJY7OxhJ+zJF7UD/sCL3lYNFuqmQEVlkfS4Quif6FyYg==",
+        "dependencies": {
+          "Microsoft.NETFramework.ReferenceAssemblies.net481": "1.0.3"
+        }
+      },
+      "RM.Friendly.WPFStandardControls": {
+        "type": "Direct",
+        "requested": "[1.63.0, )",
+        "resolved": "1.63.0",
+        "contentHash": "FuvS7toX4ww/6y9GKGKOyKOJfqcthaaN5Bx9FjhGS96pHp4N0FSsw0ZWGl+5YPKulfNubVExGi+u6oFtjOX/6A==",
+        "dependencies": {
+          "Codeer.Friendly.Windows.Grasp": "2.16.0",
+          "Codeer.TestAssistant.GeneratorToolKit": "3.15.0"
+        }
+      },
+      "Codeer.Friendly": {
+        "type": "Transitive",
+        "resolved": "2.7.0",
+        "contentHash": "WblR8Y6kaIqi9vmgZ0j8X0gdoZ6HEkDxsLEtRiBXZsnhKXzqTs6Qj40hlhjhyNzxQESTq18fXgRYVM1CGUNX7g=="
+      },
+      "Codeer.Friendly.Windows": {
+        "type": "Transitive",
+        "resolved": "2.18.0",
+        "contentHash": "/uhokzQwYBJwFunNi+0filmJRlUFfZc+Y3Gz0HLwDqoZZ1/+6MoX3wTTsMEl2lefgm64ZsbbZ8fPyhY8njIscg==",
+        "dependencies": {
+          "Codeer.Friendly": "2.7.0"
+        }
+      },
+      "Codeer.TestAssistant.GeneratorToolKit": {
+        "type": "Transitive",
+        "resolved": "3.15.0",
+        "contentHash": "L2K2LwLr3x1319yl6IRyLIupCXLAmeUWj5+yiMj8girm5H0qtGDiGk6EX42Q8sAscCDVmJKrWe3JPQWnPROfiQ=="
+      },
+      "Microsoft.NETFramework.ReferenceAssemblies.net481": {
+        "type": "Transitive",
+        "resolved": "1.0.3",
+        "contentHash": "Vv/20vgHS7VglVOVh8J3Iz/MA+VYKVRp9f7r2qiKBMuzviTOmocG70yq0Q8T5OTmCONkEAIJwETD1zhEfLkAXQ=="
+      }
+    },
+    ".NETFramework,Version=v4.8.1/win-x86": {}
+  }
+}

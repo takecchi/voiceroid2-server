@@ -6,6 +6,7 @@ using System.Linq;
 using System.Threading;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using Codeer.Friendly;
 using Codeer.Friendly.Windows;
 using Codeer.Friendly.Windows.Grasp;
@@ -209,17 +210,76 @@ internal sealed class Voiceroid2Driver : IDisposable
     }
 
     /// <summary>
-    /// 話者一覧を返す。VOICEROID2 自体は外部 API を持たないため確実な手段が無い。
-    /// 実機で確認した上で、以下のいずれかの方式に置き換える想定:
-    ///   (a) インストールディレクトリの voice/* 構成ファイルを読む
-    ///   (b) Codeer.Friendly.Dynamic 経由でメインウィンドウの話者 ComboBox の
-    ///       ItemsSource を投影する
-    /// 現状は空配列を返すだけのスタブ。
+    /// VOICEROID2 メインウィンドウ左ペインのボイスプリセット一覧 (ListView) から
+    /// プリセット名 (= --speaker / "名前&gt;テキスト" の名前) を列挙する。
+    ///
+    /// 実機検証 (2026-05): ListView の Items は <c>AI.Talk.VoicePreset</c> 型で
+    /// <c>PresetName</c> ("ついなちゃん（標準語）" 等) と <c>VoiceName</c> ("tsuina_44") を持つ。
+    /// 該当 ListView は <c>Selector</c> 派生コントロールを走査して
+    /// Items[0] が <c>PresetName</c> プロパティを持つかで判別している
+    /// (バージョン揺れに備えて型名そのものは見ない)。
+    ///
+    /// VoicePreset 型は AI.Talk.dll の内部型でこちらでは参照できないため、
+    /// Codeer.Friendly の AppVar 経由でプロパティを読む。<c>dynamic</c> は使わず
+    /// 文字列キー indexer + Core で typed に取り出す (`.claude/rules/type-safety.md` 参照)。
     /// </summary>
     public IReadOnlyList<string> ListSpeakers()
     {
-        LogWriter.Warn("ListSpeakers is not implemented; returning empty list");
+        var tree = _mainWindow.LogicalTree();
+        var selectors = tree.ByType<Selector>();
+
+        for (var idx = 0; idx < selectors.Count; idx++)
+        {
+            var names = TryReadPresetNames(selectors[idx]);
+            if (names.Count > 0)
+            {
+                return names;
+            }
+        }
+
+        LogWriter.Warn(
+            "voice preset selector not found (no Selector has items with `PresetName`)");
         return Array.Empty<string>();
+    }
+
+    private static List<string> TryReadPresetNames(AppVar selector)
+    {
+        AppVar items;
+        int count;
+        try
+        {
+            items = selector["Items"]();
+            count = (int)items["Count"]().Core;
+        }
+        catch
+        {
+            return new List<string>();
+        }
+        if (count == 0)
+        {
+            return new List<string>();
+        }
+
+        var result = new List<string>(count);
+        for (var i = 0; i < count; i++)
+        {
+            string? name;
+            try
+            {
+                var item = items["get_Item"](i);
+                name = item["PresetName"]().Core as string;
+            }
+            catch
+            {
+                // PresetName を持たないアイテムが混ざる = この Selector はボイスプリセット用ではない
+                return new List<string>();
+            }
+            if (!string.IsNullOrEmpty(name))
+            {
+                result.Add(name!);
+            }
+        }
+        return result;
     }
 
     private void WaitWhilePlaying()
