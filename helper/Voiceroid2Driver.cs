@@ -147,10 +147,11 @@ internal sealed class Voiceroid2Driver : IDisposable
     /// テキストを設定して再生ボタンを押す (スピーカー出力のみ)。
     /// 発話完了まで待ってからリターンする。
     /// </summary>
-    public void Talk(string text, string? speaker)
+    public void Talk(string text, string? speaker, VoiceTuning tuning)
     {
         var payload = ApplySpeakerPrefix(text, speaker);
 
+        ApplyTuning(tuning);
         _stopBtn.EmulateClick();
         _textBox.EmulateChangeText(payload);
         _seekHeadBtn?.EmulateClick();
@@ -163,7 +164,7 @@ internal sealed class Voiceroid2Driver : IDisposable
     /// <summary>
     /// テキストを設定して「音声保存」を実行し WAV を outPath に書き出す。
     /// </summary>
-    public void SaveAudio(string text, string? speaker, string outPath)
+    public void SaveAudio(string text, string? speaker, string outPath, VoiceTuning tuning)
     {
         if (_saveBtn == null)
         {
@@ -180,6 +181,7 @@ internal sealed class Voiceroid2Driver : IDisposable
             File.Delete(absPath);
         }
 
+        ApplyTuning(tuning);
         _stopBtn.EmulateClick();
         _textBox.EmulateChangeText(payload);
 
@@ -275,6 +277,82 @@ internal sealed class Voiceroid2Driver : IDisposable
             }
         }
         return result;
+    }
+
+    /// <summary>
+    /// マスター効果パラメータ (音量・話速・高さ・抑揚) を 4 つとも設定する。
+    /// 1.0 が VOICEROID2 既定値。
+    ///
+    /// 実機検証 (2026-05): VOICEROID2 のマスター効果 UI は
+    /// <c>AI.Talk.Editor.MasterControlView</c> の中に <c>AI.Framework.Wpf.Controls.LinearFader</c>
+    /// が 7 個並んでいて、先頭 4 つが 音量/話速/高さ/抑揚、後ろ 3 つがポーズ系。
+    ///
+    /// 内部 TextBox.Text を書き換えても LinearFader の Value DP に伝播しない (TwoWay バインドが
+    /// LostFocus トリガーで張られているっぽい) ため、LinearFader.set_Value を直接呼んで
+    /// VM 側に値を反映させる。
+    /// </summary>
+    private void ApplyTuning(VoiceTuning tuning)
+    {
+        var masterView = _mainWindow
+            .GetFromTypeFullName(MasterControlViewTypeFullName)
+            .FirstOrDefault();
+        if (masterView == null)
+        {
+            LogWriter.Warn($"tuning: {MasterControlViewTypeFullName} not found; skipped");
+            return;
+        }
+        var faders = FindByTypeFullName(masterView.LogicalTree(), LinearFaderTypeFullName);
+        if (faders.Length < 4)
+        {
+            LogWriter.Warn(
+                $"tuning: MasterControlView has only {faders.Length} LinearFaders (need >=4); skipped");
+            return;
+        }
+
+        SetFaderValue(faders[0], tuning.Volume, "volume");
+        SetFaderValue(faders[1], tuning.Speed, "speed");
+        SetFaderValue(faders[2], tuning.Pitch, "pitch");
+        SetFaderValue(faders[3], tuning.Intonation, "intonation");
+    }
+
+    private const string MasterControlViewTypeFullName = "AI.Talk.Editor.MasterControlView";
+    private const string LinearFaderTypeFullName = "AI.Framework.Wpf.Controls.LinearFader";
+
+    /// <summary>
+    /// LogicalTree 内で <paramref name="typeFullName"/> に完全一致する型の要素だけを拾う。
+    /// LinearFader は本プロジェクトで型参照を持たないため <c>ByType&lt;T&gt;</c> が使えず、
+    /// 文字列で型 FullName を比較する。
+    /// </summary>
+    private static AppVar[] FindByTypeFullName(
+        IWPFDependencyObjectCollection<DependencyObject> tree, string typeFullName)
+    {
+        var result = new List<AppVar>();
+        for (var i = 0; i < tree.Count; i++)
+        {
+            var item = tree[i];
+            string fullName;
+            try { fullName = (item["GetType"]()["FullName"]().Core as string) ?? ""; }
+            catch { continue; }
+            if (fullName == typeFullName) result.Add(item);
+        }
+        return result.ToArray();
+    }
+
+    private static void SetFaderValue(AppVar fader, double value, string paramName)
+    {
+        try
+        {
+            // LinearFader.Value (DependencyProperty) の CLR setter を直接呼ぶ。
+            // set_Value(double) は WPF が自動生成する setter の IL 名で、Codeer.Friendly が
+            // リフレクションで解決する。プリミティブ (double) はそのまま marshal される。
+            fader["set_Value"](value);
+        }
+        catch (Exception ex)
+        {
+            LogWriter.Warn(
+                $"tuning: {paramName}={value:F2} via LinearFader.set_Value failed: " +
+                $"{ex.GetType().Name}: {ex.Message}");
+        }
     }
 
     private void WaitWhilePlaying()

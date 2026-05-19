@@ -55,7 +55,7 @@ internal static class Program
     private static int HandleTalk(ParsedArgs args)
     {
         using var driver = Voiceroid2Driver.AttachAndWaitReady();
-        driver.Talk(args.RequireText(), args.Speaker);
+        driver.Talk(args.RequireText(), args.Speaker, args.Tuning);
         return 0;
     }
 
@@ -64,7 +64,7 @@ internal static class Program
         // 音声保存完了 MessageBox の "ぽこーん" (Windows 情報音) を save 中だけ抑止
         using var silencer = new SystemSoundSilencer();
         using var driver = Voiceroid2Driver.AttachAndWaitReady();
-        driver.SaveAudio(args.RequireText(), args.Speaker, args.RequireOut());
+        driver.SaveAudio(args.RequireText(), args.Speaker, args.RequireOut(), args.Tuning);
         return 0;
     }
 
@@ -74,10 +74,15 @@ internal static class Program
             "voiceroid2-helper\n" +
             "  --list-speakers\n" +
             "      List speakers found on the main window.\n" +
-            "  --talk --text TEXT [--speaker NAME]\n" +
+            "  --talk --text TEXT [--speaker NAME] [tuning...]\n" +
             "      Play TEXT through the system speaker.\n" +
-            "  --save --text TEXT --out FILE [--speaker NAME]\n" +
-            "      Synthesize TEXT and write a WAV to FILE via VOICEROID2's save flow.\n");
+            "  --save --text TEXT --out FILE [--speaker NAME] [tuning...]\n" +
+            "      Synthesize TEXT and write a WAV to FILE via VOICEROID2's save flow.\n" +
+            "  tuning options (all default 1.0):\n" +
+            "      --volume N       master volume multiplier\n" +
+            "      --speed  N       speech speed multiplier\n" +
+            "      --pitch  N       pitch multiplier\n" +
+            "      --intonation N   pitch-range / emphasis multiplier\n");
         return exitCode;
     }
 
@@ -87,6 +92,7 @@ internal static class Program
         public string? Text { get; set; }
         public string? Out { get; set; }
         public string? Speaker { get; set; }
+        public VoiceTuning Tuning { get; set; } = VoiceTuning.Default;
 
         public string RequireText() =>
             string.IsNullOrEmpty(Text)
@@ -134,6 +140,18 @@ internal static class Program
                 case "--speaker":
                     result.Speaker = RequireValue(args, ref i, "--speaker");
                     break;
+                case "--volume":
+                    result.Tuning = result.Tuning.WithVolume(ParseDouble(args, ref i, "--volume"));
+                    break;
+                case "--speed":
+                    result.Tuning = result.Tuning.WithSpeed(ParseDouble(args, ref i, "--speed"));
+                    break;
+                case "--pitch":
+                    result.Tuning = result.Tuning.WithPitch(ParseDouble(args, ref i, "--pitch"));
+                    break;
+                case "--intonation":
+                    result.Tuning = result.Tuning.WithIntonation(ParseDouble(args, ref i, "--intonation"));
+                    break;
                 default:
                     throw new ArgumentException($"unknown argument: {args[i]}");
             }
@@ -149,5 +167,16 @@ internal static class Program
             throw new ArgumentException($"{flag} requires a value");
         }
         return args[++i];
+    }
+
+    private static double ParseDouble(string[] args, ref int i, string flag)
+    {
+        var raw = RequireValue(args, ref i, flag);
+        if (!double.TryParse(raw, System.Globalization.NumberStyles.Float,
+                System.Globalization.CultureInfo.InvariantCulture, out var value))
+        {
+            throw new ArgumentException($"{flag} requires a numeric value (got \"{raw}\")");
+        }
+        return value;
     }
 }

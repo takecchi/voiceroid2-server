@@ -73,6 +73,10 @@ export class Voiceroid2Controller {
     await this.service.talk({
       text: request.text,
       speaker: request.speaker,
+      volume: request.volume,
+      speed: request.speed,
+      pitch: request.pitch,
+      intonation: request.intonation,
     });
     return { success: true, message: `Talked: ${request.text}` };
   }
@@ -95,6 +99,10 @@ export class Voiceroid2Controller {
     const wav = await this.service.synthesize({
       text: request.text,
       speaker: request.speaker,
+      volume: request.volume,
+      speed: request.speed,
+      pitch: request.pitch,
+      intonation: request.intonation,
     });
 
     res.set({

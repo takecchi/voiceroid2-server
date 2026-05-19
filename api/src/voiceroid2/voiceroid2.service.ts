@@ -6,14 +6,37 @@ import { Voiceroid2Cli } from './voiceroid2-cli';
 import { WorkerStatus } from './dto/status.dto';
 import { parseLines } from '@/shared/utils/parse-lines';
 
-export interface SynthesizeOptions {
+interface VoiceTuning {
+  volume?: number;
+  speed?: number;
+  pitch?: number;
+  intonation?: number;
+}
+
+export interface SynthesizeOptions extends VoiceTuning {
   text: string;
   speaker?: string;
 }
 
-export interface TalkOptions {
+export interface TalkOptions extends VoiceTuning {
   text: string;
   speaker?: string;
+}
+
+// VOICEROID2 のマスター効果は前回値が残るため、未指定時も明示的に 1.0 を送って初期化する
+const TUNING_DEFAULT = 1.0;
+
+function buildTuningArgs(options: VoiceTuning): string[] {
+  return [
+    '--volume',
+    (options.volume ?? TUNING_DEFAULT).toString(),
+    '--speed',
+    (options.speed ?? TUNING_DEFAULT).toString(),
+    '--pitch',
+    (options.pitch ?? TUNING_DEFAULT).toString(),
+    '--intonation',
+    (options.intonation ?? TUNING_DEFAULT).toString(),
+  ];
 }
 
 @Injectable()
@@ -64,6 +87,7 @@ export class Voiceroid2Service {
     if (options.speaker) {
       args.push('--speaker', options.speaker);
     }
+    args.push(...buildTuningArgs(options));
     this.logger.log(
       `talk: ${options.speaker ?? '(default)'} "${options.text}"`,
     );
@@ -78,6 +102,7 @@ export class Voiceroid2Service {
       if (options.speaker) {
         args.push('--speaker', options.speaker);
       }
+      args.push(...buildTuningArgs(options));
       this.logger.log(
         `synthesize: ${options.speaker ?? '(default)'} "${options.text}" -> ${outFile}`,
       );

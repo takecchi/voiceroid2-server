@@ -1,8 +1,9 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { IsNotEmpty, IsOptional, IsString } from 'class-validator';
 import { NullToUndefined } from '@/shared/decorators/NullToUndefined';
+import { VoiceTuningParams } from './voice-tuning.dto';
 
-export class SynthesizeSpeechRequest {
+export class SynthesizeSpeechRequest extends VoiceTuningParams {
   @ApiProperty({
     type: String,
     description: '読み上げるテキスト',
