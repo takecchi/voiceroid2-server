@@ -15,7 +15,7 @@ export class SynthesizeSpeechRequest {
     type: String,
     required: false,
     description:
-      '話者名 (例: 結月ゆかり)。指定するとVOICEROID2の話者切替記号 "<speaker>＞" を先頭に挿入します。',
+      '話者名 (例: 結月ゆかり)。指定するとVOICEROID2の話者切替記号 "<speaker>>" を先頭に挿入します。',
   })
   @NullToUndefined()
   @IsOptional()

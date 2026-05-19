@@ -70,7 +70,10 @@ VOICEROID2 の「音声保存」は以下のモーダルが連続する:
 ### 文字エンコーディング
 
 - helper.exe の stdout は UTF-8 (`Console.OutputEncoding = UTF8`)。NestJS 側も UTF-8 でデコードする。
-- 話者切替記号は全角の `＞` (U+FF1E)。半角 `>` ではない。
+- 話者切替記号は **半角 `>`** (ASCII 0x3E)。SimpleVoiceroid2Proxy の README に
+  全角 `＞` (U+FF1E, Shift-JIS で 0x81 0x84) と書かれているが、実機検証では
+  半角でないと話者切替が効かない (2026-05 確認)。
+  VOICEROID2 設定で記号は変更可能だが、既定値は半角の前提でコードを書く。
 
 ## API サーバー側ルール
 

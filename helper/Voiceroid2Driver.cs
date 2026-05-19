@@ -266,8 +266,10 @@ internal sealed class Voiceroid2Driver : IDisposable
     private static string ApplySpeakerPrefix(string text, string? speaker)
     {
         if (string.IsNullOrWhiteSpace(speaker)) return text;
-        // VOICEROID2 既定の話者切替記号は全角 '＞' (U+FF1E)
-        return $"{speaker}＞{text}";
+        // VOICEROID2 既定の話者切替記号は半角 '>' (ASCII 0x3E)。
+        // README / 仕様書類で全角 '＞' (U+FF1E) と書かれていることがあるが
+        // 実機検証で半角でないと話者切替が効かないことを確認済み (2026-05)。
+        return $"{speaker}>{text}";
     }
 
     private static string Preview(string text)
