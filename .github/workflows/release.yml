@@ -157,13 +157,19 @@ jobs:
   #       Codeer.*.dll
   #       (etc.)
   #     node_modules/
-  # 起動 bat / sh は Windows 側で別途同梱する想定 (このリポジトリでは生成しない)。
+  #     init.cmd / init.ps1   ← 初回セットアップ (.env 生成 + 認証コード取得)
+  #     start.cmd / start.ps1 ← API サーバー起動
   package:
     name: Package single bundle
     needs: [ build-api, build-helper ]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
+      # スクリプト (init.cmd / start.cmd / *.ps1) を stage に同梱するために checkout する
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name }}
+
       - name: Download api stage
         uses: actions/download-artifact@v4
         with:
@@ -175,6 +181,10 @@ jobs:
         with:
           name: voiceroid2-server-helper-stage
           path: stage/helper/
+
+      - name: Copy launch scripts into stage
+        run: |
+          cp init.cmd init.ps1 start.cmd start.ps1 stage/
 
       - name: Create bundle zip
         env:
