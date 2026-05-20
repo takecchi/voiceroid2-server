@@ -52,6 +52,19 @@ function Read-EnvKey([string]$Key) {
     return $null
 }
 
+function Test-VoiceroidEditorRunning {
+    return @(Get-Process -Name VoiceroidEditor -ErrorAction SilentlyContinue).Count -gt 0
+}
+
+function Wait-VoiceroidEditorRunning([int]$timeoutSec = 60) {
+    $sw = [Diagnostics.Stopwatch]::StartNew()
+    while ($sw.Elapsed.TotalSeconds -lt $timeoutSec) {
+        if (Test-VoiceroidEditorRunning) { return $true }
+        Start-Sleep -Milliseconds 500
+    }
+    return $false
+}
+
 Write-Host '=== voiceroid2-server initialization ===' -ForegroundColor Cyan
 Write-Host ''
 
@@ -102,25 +115,54 @@ if (-not [string]::IsNullOrEmpty($currentAuth)) {
     Write-Host ''
     Write-Host '=== 認証コードシードを取得します ===' -ForegroundColor Cyan
     Write-Host ''
-    Write-Host '  1. VOICEROID2 エディタを (非管理者で) 起動してください:'
-    Write-Host "       $DefaultInstallDir\VoiceroidEditor.exe"
-    Write-Host '  2. エディタが起動したらこのウィンドウに戻って Enter を押してください。'
-    Write-Host '     (取得後は VOICEROID2 エディタは閉じて構いません)'
-    Write-Host ''
-    [void][System.Console]::ReadLine()
+
+    if (Test-VoiceroidEditorRunning) {
+        Write-Host 'VOICEROID2 エディタの起動を検出しました。' -ForegroundColor Green
+    } else {
+        $voiceroidExe = Join-Path $DefaultInstallDir 'VoiceroidEditor.exe'
+        if (Test-Path $voiceroidExe) {
+            Write-Host "VOICEROID2 エディタを自動起動します: $voiceroidExe"
+            Start-Process -FilePath $voiceroidExe | Out-Null
+            if (-not (Wait-VoiceroidEditorRunning)) {
+                Write-Host '[error] VOICEROID2 エディタが 60 秒以内に起動しませんでした。' -ForegroundColor Red
+                exit 1
+            }
+            Write-Host '  → 起動検出。UI 初期化を 3 秒待ちます...'
+            Start-Sleep -Seconds 3
+        } else {
+            Write-Host 'VOICEROID2 エディタが起動していません。' -ForegroundColor Yellow
+            Write-Host '手動で (非管理者で) 起動してから Enter を押してください。'
+            do {
+                [void][System.Console]::ReadLine()
+                if (-not (Test-VoiceroidEditorRunning)) {
+                    Write-Host '  → まだ検出できません。VOICEROID2 エディタを起動してから Enter:' -ForegroundColor Yellow
+                }
+            } while (-not (Test-VoiceroidEditorRunning))
+            Write-Host '  → 検出しました。' -ForegroundColor Green
+        }
+    }
 
     Write-Host 'helper --get-key を実行中...'
-    # stdout だけ拾う (stderr は helper のログでありユーザに見せたいので素通し)。
-    $authOutput = (& $HelperExe --get-key) | Out-String
+    # UI 初期化途中で失敗するケースに備えてリトライ。stderr は helper のログなので素通し。
+    $authOutput = $null
+    for ($i = 0; $i -lt 3; $i++) {
+        $authOutput = (& $HelperExe --get-key) | Out-String
+        if ($LASTEXITCODE -eq 0 -and -not [string]::IsNullOrEmpty($authOutput.Trim())) { break }
+        if ($i -lt 2) {
+            Write-Host '  → 失敗。3 秒待ってリトライ...' -ForegroundColor Yellow
+            Start-Sleep -Seconds 3
+        }
+    }
     if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrEmpty($authOutput.Trim())) {
         Write-Host '[error] 認証コードを取得できませんでした。' -ForegroundColor Red
-        Write-Host '        VOICEROID2 エディタが起動しているか、helper と権限 (UAC) が一致しているか確認してください。'
+        Write-Host '        - VOICEROID2 エディタの起動が完了していますか?'
+        Write-Host '        - helper.exe と VOICEROID2 エディタの権限 (UAC) が一致していますか?'
         exit 1
     }
     $authCode = $authOutput.Trim()
     Update-EnvKey 'VOICEROID2_AUTH_CODE' $authCode
     Write-Host '認証コードを api\.env に書き込みました。'
-    Write-Host 'VOICEROID2 エディタは閉じて構いません。'
+    Write-Host 'VOICEROID2 エディタは閉じて構いません (以後 API 側は DLL 直叩きで動きます)。'
 }
 
 Write-Host ''
