@@ -1,0 +1,133 @@
+name: Release
+
+# GitHub Release を created したときに api / helper をビルドして zip を添付する。
+# タグ push ではなく Release オブジェクトの作成イベントで発火することで、
+# 「リリースする意思」を明示する 1 段クッションを挟む。
+#
+# 使い方:
+#   gh release create v0.1.0 --target main --generate-notes
+#     ↑ target は必ずブランチ名で指定すること (SHA だと validate ジョブが落とす)
+#
+# 失敗時の再実行:
+#   GitHub UI から該当 run を "Re-run failed jobs"。
+
+on:
+  release:
+    types: [ created ]
+
+permissions:
+  contents: write  # action-gh-release が Release にアセットを追加するのに必要
+
+# 同じタグでの二重発火を防ぐ。並行は禁止だが既存の run を中断はしない (リリース成果物を壊さないため)。
+concurrency:
+  group: release-${{ github.event.release.tag_name }}
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    name: Validate release target
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # virchamate-backend の release-prepare.yml と同じ原則:
+      # - target_commitish はリモートブランチでなければならない (SHA は拒否)
+      # - リリースタグはそのブランチの祖先でなければならない
+      # 過去にあった「同じコミットを含む別ブランチへ force-push される事故」を防ぐ。
+      - name: Validate target_commitish & tag ancestry
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          TARGET_COMMITISH: ${{ github.event.release.target_commitish }}
+        run: |
+          git fetch --tags --quiet
+
+          if [ -z "$TARGET_COMMITISH" ]; then
+            echo "::error::target_commitish is empty. Release を作るときは target branch を必ず指定してください。"
+            exit 1
+          fi
+
+          if ! git rev-parse --verify "refs/remotes/origin/$TARGET_COMMITISH" >/dev/null 2>&1; then
+            echo "::error::target_commitish='$TARGET_COMMITISH' is not a remote branch."
+            echo "GitHub Release は必ずブランチ名 (例: main) を target に指定して作成してください。SHA や削除済みブランチ名は不可。"
+            exit 1
+          fi
+
+          TAG_SHA=$(git rev-parse "$RELEASE_TAG")
+          if ! git merge-base --is-ancestor "$TAG_SHA" "refs/remotes/origin/$TARGET_COMMITISH"; then
+            echo "::error::tag $RELEASE_TAG ($TAG_SHA) は origin/$TARGET_COMMITISH に含まれていません。"
+            echo "別ブランチで作ったタグから誤ってリリースされるのを防ぐためのチェックです。"
+            exit 1
+          fi
+
+          echo "OK: $RELEASE_TAG ($TAG_SHA) is on origin/$TARGET_COMMITISH"
+
+  build-api:
+    name: Build api (linux)
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Build
+        run: npm run build -w api
+
+      - name: Package zip
+        run: |
+          (cd api && zip -r ../voiceroid2-server-api-${{ github.event.release.tag_name }}.zip dist package.json)
+
+      - name: Attach to Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.release.tag_name }}
+          files: voiceroid2-server-api-${{ github.event.release.tag_name }}.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  build-helper:
+    name: Build helper (windows)
+    needs: validate
+    runs-on: windows-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: helper
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name }}
+
+      - uses: microsoft/setup-msbuild@v2
+
+      - name: Restore
+        run: msbuild Voiceroid2Helper.csproj -t:Restore -property:Configuration=Release
+
+      - name: Build
+        run: msbuild Voiceroid2Helper.csproj -property:Configuration=Release -m
+
+      - name: Package zip
+        shell: powershell
+        run: |
+          $tag = "${{ github.event.release.tag_name }}"
+          Compress-Archive -Path bin/Release/net481/* -DestinationPath "../voiceroid2-helper-$tag.zip"
+
+      - name: Attach to Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.release.tag_name }}
+          files: voiceroid2-helper-${{ github.event.release.tag_name }}.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
