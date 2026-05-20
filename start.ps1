@@ -1,4 +1,4 @@
-# voiceroid2-server 起動スクリプト。
+﻿# voiceroid2-server 起動スクリプト。
 # Release zip を解凍して init.cmd 後に start.cmd をダブルクリックすると本スクリプトが呼ばれる。
 #
 # やること:

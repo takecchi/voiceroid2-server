@@ -1,4 +1,4 @@
-# voiceroid2-server 初回セットアップスクリプト。
+﻿# voiceroid2-server 初回セットアップスクリプト。
 # Release zip を解凍して init.cmd をダブルクリックすると本スクリプトが呼ばれる。
 #
 # やること:
