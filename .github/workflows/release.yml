@@ -1,7 +1,7 @@
 name: Release
 
-# GitHub Release を created したときに api / helper をビルドして zip を添付する。
-# タグ push ではなく Release オブジェクトの作成イベントで発火することで、
+# GitHub Release を created したときに api + helper をビルドして 1 つの zip にまとめ、
+# Release に添付する。タグ push ではなく Release オブジェクトの作成イベントで発火することで、
 # 「リリースする意思」を明示する 1 段クッションを挟む。
 #
 # 使い方:
@@ -64,6 +64,16 @@ jobs:
 
           echo "OK: $RELEASE_TAG ($TAG_SHA) is on origin/$TARGET_COMMITISH"
 
+  # api ワークスペースを runtime に必要な分だけ揃えて artifact 化する。
+  # ・nest build で dist/ を生成
+  # ・npm prune --omit=dev で devDependencies を node_modules から除去
+  # ・以下の構成で固める (zip 化は package ジョブが担当):
+  #   stage/
+  #     api/
+  #       dist/
+  #       package.json
+  #       .env.example
+  #     node_modules/   ← npm workspace の hoist 先 (api/dist/src/main.js から ../node_modules で解決)
   build-api:
     name: Build api (linux)
     needs: validate
@@ -79,24 +89,34 @@ jobs:
           node-version: 22
           cache: npm
 
-      - name: Install
+      - name: Install (with devDeps for build)
         run: npm ci
 
       - name: Build
         run: npm run build -w api
 
-      - name: Package zip
+      - name: Prune devDependencies
+        run: npm prune --omit=dev
+
+      - name: Stage api bundle
         run: |
-          (cd api && zip -r ../voiceroid2-server-api-${{ github.event.release.tag_name }}.zip dist package.json)
+          mkdir -p stage/api
+          cp -r api/dist stage/api/dist
+          cp api/package.json stage/api/
+          cp api/.env.example stage/api/.env.example
+          cp -r node_modules stage/node_modules
 
-      - name: Attach to Release
-        uses: softprops/action-gh-release@v2
+      - name: Upload api stage
+        uses: actions/upload-artifact@v4
         with:
-          tag_name: ${{ github.event.release.tag_name }}
-          files: voiceroid2-server-api-${{ github.event.release.tag_name }}.zip
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          name: voiceroid2-server-api-stage
+          if-no-files-found: error
+          path: stage/
+          # node_modules 内のシンボリックリンク等を保持したいので tar 形式で渡す
+          include-hidden-files: true
 
+  # helper の Release ビルド成果 (bin/Release/net481/*) をそのまま artifact 化する。
+  # zip 化は package ジョブが担当。
   build-helper:
     name: Build helper (windows)
     needs: validate
@@ -118,16 +138,57 @@ jobs:
       - name: Build
         run: msbuild Voiceroid2Helper.csproj -property:Configuration=Release -m
 
-      - name: Package zip
-        shell: powershell
+      - name: Upload helper stage
+        uses: actions/upload-artifact@v4
+        with:
+          name: voiceroid2-server-helper-stage
+          if-no-files-found: error
+          path: helper/bin/Release/net481/
+
+  # api と helper の stage を 1 つの zip にまとめて Release に添付する。
+  # 解凍したフォルダ構成:
+  #   voiceroid2-server-<tag>/
+  #     api/
+  #       dist/
+  #       package.json
+  #       .env.example
+  #     helper/
+  #       voiceroid2-helper.exe
+  #       Codeer.*.dll
+  #       (etc.)
+  #     node_modules/
+  # 起動 bat / sh は Windows 側で別途同梱する想定 (このリポジトリでは生成しない)。
+  package:
+    name: Package single bundle
+    needs: [ build-api, build-helper ]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Download api stage
+        uses: actions/download-artifact@v4
+        with:
+          name: voiceroid2-server-api-stage
+          path: stage/
+
+      - name: Download helper stage
+        uses: actions/download-artifact@v4
+        with:
+          name: voiceroid2-server-helper-stage
+          path: stage/helper/
+
+      - name: Create bundle zip
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
         run: |
-          $tag = "${{ github.event.release.tag_name }}"
-          Compress-Archive -Path bin/Release/net481/* -DestinationPath "../voiceroid2-helper-$tag.zip"
+          # zip の中の最上位フォルダ名を voiceroid2-server-<tag> にするため、stage を rename してから固める
+          mv stage "voiceroid2-server-$RELEASE_TAG"
+          zip -r "voiceroid2-server-$RELEASE_TAG.zip" "voiceroid2-server-$RELEASE_TAG"
+          ls -lh "voiceroid2-server-$RELEASE_TAG.zip"
 
       - name: Attach to Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.event.release.tag_name }}
-          files: voiceroid2-helper-${{ github.event.release.tag_name }}.zip
+          files: voiceroid2-server-${{ github.event.release.tag_name }}.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
